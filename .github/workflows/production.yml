@@ -1,0 +1,162 @@
+name: Build Production APK
+run-name: Production APK ${{ inputs.version_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'App version (for example 0.1.0)'
+        required: true
+        default: '0.1.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  signing:
+    name: Validate release setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate version and signing secrets
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || (( ${#VERSION_NAME} > 100 )); then
+            echo '::error::Use a version such as 0.1.0 or 0.1.0-beta.1.'
+            exit 1
+          fi
+          missing=0
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing repository secret: $name. See docs/RELEASE.md or run tools/Setup-ReleaseSigning.ps1 once."
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+  unit-tests:
+    name: Unit tests
+    needs: signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: ./gradlew testReleaseUnitTest --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-unit-test-results
+          path: app/build/reports/tests/
+
+  lint:
+    name: Android lint
+    needs: signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - run: ./gradlew lintRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-lint-results
+          path: app/build/reports/lint-results-release.*
+
+  build:
+    name: Build signed production APK
+    needs: [unit-tests, lint]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
+      - name: Set app version
+        env:
+          VERSION_NAME: ${{ inputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'RELEASE_VERSION_NAME=%s\n' "$VERSION_NAME" >> "$GITHUB_ENV"
+          printf 'RELEASE_VERSION_CODE=%s\n' "$((1000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/metro-release.jks"
+          keytool -list -keystore "$RUNNER_TEMP/metro-release.jks" \
+            -storepass:env ANDROID_KEYSTORE_PASSWORD -alias "$ANDROID_KEY_ALIAS" > /dev/null
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/metro-release.jks"
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PrequireReleaseSigning=true \
+            "-PreleaseVersionName=$RELEASE_VERSION_NAME" \
+            "-PreleaseVersionCode=$RELEASE_VERSION_CODE"
+      - name: Verify and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk='app/build/outputs/apk/release/app-release.apk'
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          mkdir -p artifacts
+          name="Metro-Launcher-$RELEASE_VERSION_NAME-release.apk"
+          cp "$apk" "artifacts/$name"
+          (cd artifacts && sha256sum "$name" > "$name.sha256")
+          {
+            printf '### Production APK ready\n\n'
+            printf 'Version: `%s` (code `%s`)\n\n' "$RELEASE_VERSION_NAME" "$RELEASE_VERSION_CODE"
+            printf 'Download **Metro-Launcher-%s-release** from this run’s Artifacts section.\n' "$RELEASE_VERSION_NAME"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Metro-Launcher-${{ inputs.version_name }}-release
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove temporary keystore
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/metro-release.jks"
