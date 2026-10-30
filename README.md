@@ -6,7 +6,7 @@ A native Android home launcher recreating the Windows Phone 8 / 8.1 Start and ap
 
 Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose the version and run it. Download the `Metro-Launcher-<version>-release` artifact when it succeeds, extract the APK and install it.
 
-Production signing requires one setup: [configure the four signing secrets](docs/RELEASE.md). On Windows, after installing GitHub CLI and signing in with `gh auth login`, run `powershell -ExecutionPolicy Bypass -File .\tools\Setup-ReleaseSigning.ps1`. The script creates or reuses a private signing key and configures this repo. Keep using that key for future app updates.
+Production signing requires one setup: [generate a key and add four GitHub secrets](docs/RELEASE.md#one-time-signing-setup). Run the `keytool` command, copy the key as Base64 in PowerShell, and paste the four values into **Settings → Secrets and variables → Actions**. No repository clone or GitHub CLI is required. Keep the key and passwords for future app updates. The PowerShell setup script remains available as an optional shortcut.
 
 For an immediate debug APK with no signing setup, run [Android checks and APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/android.yml) and download `metro-launcher-debug`.
 
