@@ -4,7 +4,9 @@ A native Android home launcher recreating the Windows Phone 8 / 8.1 Start and ap
 
 ## Build from GitHub Actions
 
-Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose the version and run it. Download the `Metro-Launcher-<version>-release` artifact when it succeeds, extract the APK and install it.
+Download the latest signed APK from [GitHub Releases](https://github.com/robin-siegl/Metro-Launcher/releases/latest). Open **Assets**, download the `.apk` and install it on your phone. Release downloads do not require signing into GitHub and do not expire with Actions artifacts.
+
+To publish a new version, open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose `main`, enter a new version (for example `0.1.1`) and run it. Successful builds publish a versioned release with the signed APK and its SHA-256 checksum. Each version can be published once.
 
 Production signing requires one setup: [generate a key and add four GitHub secrets](docs/RELEASE.md#one-time-signing-setup). Run the `keytool` command, copy the key as Base64 in PowerShell, and paste the four values into **Settings → Secrets and variables → Actions**. No repository clone or GitHub CLI is required. Keep the key and passwords for future app updates. The PowerShell setup script remains available as an optional shortcut.
 
@@ -130,7 +132,7 @@ All **four instrumented tests passed on an API 28 emulator**. They cover Home re
 
 Pushes to `main`/`master` and pull requests run **Android checks and APK**, which shows separate **Unit tests**, **Android lint** and **Build APK** checks. You can run it manually too. After the checks pass, download **metro-launcher-debug**. Debug builds do not need signing secrets.
 
-**Build Production APK** is a manual workflow with signing validation, release unit tests, release lint and a signed APK build. It verifies the signature and supplies a checksum. See [production release setup](docs/RELEASE.md).
+**Build Production APK** is a manual workflow with signing validation, release unit tests, release lint, a signed APK build and a separate **Publish GitHub Release** job. It verifies the signature and publishes the APK and checksum under [Releases](https://github.com/robin-siegl/Metro-Launcher/releases). See [production release setup](docs/RELEASE.md).
 
 **Android device tests** is a separate manual workflow for API 28 and 35 emulators.
 

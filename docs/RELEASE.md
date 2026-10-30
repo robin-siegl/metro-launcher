@@ -1,8 +1,12 @@
-# Build a production APK
+# Build and publish a production APK
 
-Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose `main`, set the version if needed, and click **Run workflow** again. When the run succeeds, download the `Metro-Launcher-<version>-release` artifact. Extract it and install the `.apk` on your phone. The adjacent `.sha256` file records its checksum.
+Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose `main`, enter a new version such as `0.1.0` or `0.1.1`, and click **Run workflow** again. When all jobs succeed, open [GitHub Releases](https://github.com/robin-siegl/Metro-Launcher/releases/latest), expand **Assets**, download the `.apk` and install it on your phone. The adjacent `.sha256` file records its checksum.
 
-The workflow runs release unit tests and Android lint in separate jobs, signs the release APK, verifies its signature, and uploads the APK. It uses a version code of `1000 + the production workflow run number`, so subsequent runs increase the code automatically. GitHub retains the artifact for 30 days.
+The workflow runs release unit tests and Android lint in separate jobs, signs the release APK, verifies its signature, and uploads the APK. A separate **Publish GitHub Release** job checks the checksum, creates a tag such as `v0.1.0` at the exact built commit, and publishes the APK and checksum with generated release notes. Only that job has permission to write releases. It uses the built-in GitHub token; no additional secrets are needed.
+
+Release downloads are public, require no GitHub sign-in, and remain available until the release or assets are deleted. The latest stable download is always at [releases/latest](https://github.com/robin-siegl/Metro-Launcher/releases/latest). Actions also keeps the `Metro-Launcher-<version>-release` ZIP artifact for 30 days.
+
+Production runs are restricted to `main`. Enter a new version for each release: existing version tags are rejected before building and published APKs are never overwritten. A version with a suffix such as `0.2.0-beta.1` is published as a prerelease and does not replace the latest stable download. Android's version code is `1000 + the production workflow run number`, so later builds increase the code automatically.
 
 ## One-time signing setup
 
@@ -51,11 +55,13 @@ For an existing keystore, use its actual alias and passwords, and adjust the fil
 
 ### 4. Run the production build
 
-Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose `main`, enter the version and run it. Download the `Metro-Launcher-<version>-release` artifact when it succeeds, extract it and install the APK.
+Open [Build Production APK](https://github.com/robin-siegl/Metro-Launcher/actions/workflows/production.yml), click **Run workflow**, choose `main`, enter a new version and run it. When **Publish GitHub Release** succeeds, download the APK from the release's **Assets** or the download link in the run summary.
 
 The four secrets stay configured for future builds; repeat only this step for later releases.
 
 The workflow checks for missing secrets before running the Android jobs and names any missing entries. It checks the keystore password/alias before compiling. If a secret is missing, add it in the settings page above and rerun the workflow.
+
+If tests or the build fail, no release is published. If publishing fails, the signed APK is still available in the run's **Artifacts**; fix the reported issue and rerun the failed publishing job. If GitHub reports that the version already exists, choose a new version for a new build. If it reports an Actions permission error, ensure repository policy allows the publishing job's `contents: write` permission.
 
 ### Optional: configure secrets with the PowerShell helper
 

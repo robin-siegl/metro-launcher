@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'App version (for example 0.1.0)'
+        description: 'New release version (for example 0.1.0 or 0.1.1)'
         required: true
         default: '0.1.0'
         type: string
@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production-${{ github.ref }}
+  group: metro-production-release
   cancel-in-progress: false
 
 jobs:
@@ -25,6 +25,7 @@ jobs:
     steps:
       - name: Validate version and signing secrets
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION_NAME: ${{ inputs.version_name }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -33,18 +34,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || (( ${#VERSION_NAME} > 100 )); then
+          if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
+            echo '::error::Run production releases from the main branch.'
+            exit 1
+          fi
+          if [[ ! "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]] || (( ${#VERSION_NAME} > 100 )); then
             echo '::error::Use a version such as 0.1.0 or 0.1.0-beta.1.'
             exit 1
           fi
           missing=0
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [[ -z "${!name}" ]]; then
-              echo "::error::Missing repository secret: $name. See docs/RELEASE.md or run tools/Setup-ReleaseSigning.ps1 once."
+              echo "::error::Missing repository secret: $name. See docs/RELEASE.md for one-time setup."
               missing=1
             fi
           done
-          exit "$missing"
+          if (( missing )); then exit 1; fi
+          tag="v$VERSION_NAME"
+          git check-ref-format "refs/tags/$tag"
+          refs="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$tag" --jq '.[].ref')"
+          if grep -Fxq "refs/tags/$tag" <<< "$refs"; then
+            echo "::error::Version $VERSION_NAME already has a tag. Enter a new version, for example 0.1.1."
+            exit 1
+          fi
 
   unit-tests:
     name: Unit tests
@@ -169,3 +181,41 @@ jobs:
         if: always()
         shell: bash
         run: rm -f "$RUNNER_TEMP/metro-release.jks"
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified production APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Metro-Launcher-${{ inputs.version_name }}-release
+          path: artifacts/
+      - name: Publish APK and checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="Metro-Launcher-$VERSION_NAME-release.apk"
+          (cd artifacts && sha256sum --check "$name.sha256")
+          tag="v$VERSION_NAME"
+          flags=(--latest)
+          if [[ "$VERSION_NAME" == *-* ]]; then flags=(--prerelease); fi
+          release_url="$(gh release create "$tag" "artifacts/$name" "artifacts/$name.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Metro Launcher $VERSION_NAME" \
+            --generate-notes "${flags[@]}")"
+          {
+            printf '### Release published\n\n'
+            printf '[Download Metro Launcher %s](%s)\n\n' "$VERSION_NAME" "$release_url"
+            printf '[Download APK](%s/%s/releases/download/%s/%s)\n\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$tag" "$name"
+            printf 'The APK and SHA-256 checksum are available under the release’s **Assets**.\n'
+          } >> "$GITHUB_STEP_SUMMARY"
