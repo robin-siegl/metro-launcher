@@ -2,6 +2,26 @@
 
 A native Android home launcher recreating the Windows Phone 8 / 8.1 Start and app-list experience. Java 17, Android Views and Canvas; Android 8.0 or newer. The application has no third-party runtime libraries.
 
+## Screenshots
+
+Start, tile editing, and the alphabetical app list:
+
+<p>
+  <img src="docs/screenshots/start-dark.png" width="220" alt="Metro Start with small, medium and wide tiles on a dark background" />
+  <img src="docs/screenshots/tile-editing.png" width="220" alt="Editing a Start tile with resize, unpin and customization controls" />
+  <img src="docs/screenshots/app-list.png" width="220" alt="Alphabetical app list with letter groups and search" />
+</p>
+
+Light theme, Start settings, and letter navigation:
+
+<p>
+  <img src="docs/screenshots/start-light.png" width="220" alt="Metro Start with a light background and magenta accent" />
+  <img src="docs/screenshots/start-theme-settings.png" width="220" alt="Start and theme settings for background, accent colour and Windows Phone experience" />
+  <img src="docs/screenshots/letter-jump.png" width="220" alt="Alphabet jump grid for navigating directly to an app-list section" />
+</p>
+
+Rendered from the app's Android Views with example app tiles and settings. Phone screenshots also include Android's status and navigation bars.
+
 ## Build from GitHub Actions
 
 Download the latest signed APK from [GitHub Releases](https://github.com/robin-siegl/Metro-Launcher/releases/latest). Open **Assets**, download the `.apk` and install it on your phone. Release downloads do not require signing into GitHub and do not expire with Actions artifacts.
